@@ -81,10 +81,7 @@ Koppla sedan `expense-chat-shell.tsx` att anropa `/api/chat` istället för att 
 
 ### 5. Design tokens
 
-Beroende på om ert repo redan har ett tokensystem:
-
-- **Har tokens** — ersätt variablerna i `app/globals.css` med era befintliga
-- **Saknar tokens** — kopiera `app/globals.css` och justera färger till er palette
+Alla tokens (färger, radius, spacing, typografi) är definierade i `app/globals.css`. I första hand tar vi med vår egen `globals.css` från det riktiga repot och ersätter den här filen — det är det enklaste sättet att få rätt utseende direkt. Om det inte finns en befintlig `globals.css` att ta med går det att justera variablerna direkt i den här filen.
 
 ---
 
