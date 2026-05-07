@@ -83,6 +83,8 @@ Koppla sedan `expense-chat-shell.tsx` att anropa `/api/chat` istället för att 
 
 Alla tokens (färger, radius, spacing, typografi) är definierade i `app/globals.css`. I första hand tar vi med vår egen `globals.css` från det riktiga repot och ersätter den här filen — det är det enklaste sättet att få rätt utseende direkt. Om det inte finns en befintlig `globals.css` att ta med går det att justera variablerna direkt i den här filen.
 
+> **Viktigt:** Er `globals.css` måste innehålla ett `@theme inline`-block som exponerar CSS-variablerna till Tailwind. Utan det känner inte Tailwind igen klasser som `px-screen-edge`, `rounded-input` eller `bg-primary`.
+
 ---
 
 ## Lokal utveckling
