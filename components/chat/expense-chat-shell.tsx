@@ -1,8 +1,7 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
-import { ArrowUp, Camera, FileUp, FileText, Plus, X } from "lucide-react"
-import { DropdownMenu } from "radix-ui"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ArrowUp, Camera, FileText, Paperclip, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FloatingNav } from "@/components/ui/floating-nav"
 import {
@@ -35,6 +34,7 @@ import {
   EMPLOYEES,
   INITIAL_SCAN_FIELDS,
   SCANNED_FIELDS,
+  type CollectedReceipt,
   type ExpenseMessage,
   type GeneratingStep,
   type ScanField,
@@ -81,8 +81,19 @@ export function ExpenseChatShell() {
   const [selectedChips, setSelectedChips] = useState<string[]>([])
   const [generatingSteps, setGeneratingSteps] = useState<GeneratingStep[]>([])
 
+  const [collectedReceipts, setCollectedReceipts] = useState<CollectedReceipt[]>([])
+  const collectedReceiptsRef = useRef<CollectedReceipt[]>([])
+
+  const [hasCamera, setHasCamera] = useState(false)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((devices) => setHasCamera(devices.some((d) => d.kind === "videoinput")))
+      .catch(() => setHasCamera(false))
+  }, [])
 
   const addMessage = useCallback((msg: ExpenseMessage) => {
     setMessages((prev) => [...prev, msg])
@@ -108,6 +119,8 @@ export function ExpenseChatShell() {
     setSelectedChips([])
     setGeneratingSteps([])
     setPrompt("")
+    collectedReceiptsRef.current = []
+    setCollectedReceipts([])
   }, [clearAttachment])
 
   const showSuggestions = useCallback((opts: string[], action: (value: string) => void) => {
@@ -183,6 +196,18 @@ export function ExpenseChatShell() {
             body: "Ange externa deltagare (namn och företag):",
           })
           showSuggestions([], (value) => handleParticipantInput(value, label))
+        } else if (category === "Övrigt") {
+          addMessage({
+            id: uid(),
+            role: "assistant",
+            type: "text",
+            body: "Beskriv kort vad utlägget avser:",
+          })
+          showSuggestions([], (value) => {
+            addMessage({ id: uid(), role: "user", type: "text", body: value })
+            clearSuggestions()
+            setTimeout(() => showSummary(`Övrigt – ${value}`, "–"), 400)
+          })
         } else {
           showSummary(label, "–")
         }
@@ -308,40 +333,81 @@ export function ExpenseChatShell() {
     [addMessage, showSuggestions, handleCategoryInput, handleParticipantInput]
   )
 
+  const handleGeneratePdf = useCallback(() => {
+    const receipts = collectedReceiptsRef.current
+    if (receipts.length === 0) return
+
+    const gid = uid()
+    const initialSteps = GENERATION_STEPS.map((s) => ({ ...s }))
+    setGeneratingSteps(initialSteps)
+
+    setTimeout(() => {
+      addMessage({ id: gid, role: "assistant", type: "generating", steps: initialSteps })
+    }, 100)
+
+    initialSteps.forEach((_, i) => {
+      setTimeout(() => {
+        setGeneratingSteps((prev) =>
+          prev.map((s, idx) => (idx === i ? { ...s, status: "done" } : s))
+        )
+      }, 800 + i * 900)
+    })
+
+    const totalDelay = 800 + initialSteps.length * 900 + 400
+    setTimeout(() => {
+      const count = receipts.length
+      const lines = receipts
+        .map((r, i) => {
+          const header = r.fields.find((f) => f.label === "Leverantör")?.value ?? `Kvitto ${i + 1}`
+          return `${i + 1}. ${header}\n${r.fields.map((f) => `   ${f.label}: ${f.value}`).join("\n")}`
+        })
+        .join("\n\n")
+      const blob = new Blob([`Sammanställd utläggsrapport (${count} kvitton)\n\n${lines}\n`], {
+        type: "application/pdf",
+      })
+      const filename = count === 1 ? "utlagg.pdf" : `utlagg-sammanstallning-${count}-kvitton.pdf`
+      addMessage({
+        id: uid(),
+        role: "assistant",
+        type: "download",
+        filename,
+        blobUrl: URL.createObjectURL(blob),
+      })
+      collectedReceiptsRef.current = []
+      setCollectedReceipts([])
+    }, totalDelay)
+  }, [addMessage])
+
   const handleSubmit = useCallback(
     (summaryFields: { label: string; value: string }[]) => {
       setMessages((prev) => prev.filter((m) => m.type !== "summary"))
 
-      const gid = uid()
-      const initialSteps = GENERATION_STEPS.map((s) => ({ ...s }))
-      setGeneratingSteps(initialSteps)
+      const newReceipt: CollectedReceipt = { id: uid(), fields: summaryFields }
+      const updated = [...collectedReceiptsRef.current, newReceipt]
+      collectedReceiptsRef.current = updated
+      setCollectedReceipts(updated)
 
       setTimeout(() => {
-        addMessage({ id: gid, role: "assistant", type: "generating", steps: initialSteps })
-      }, 100)
-
-      initialSteps.forEach((_, i) => {
-        setTimeout(() => {
-          setGeneratingSteps((prev) =>
-            prev.map((s, idx) => (idx === i ? { ...s, status: "done" } : s))
-          )
-        }, 800 + i * 900)
-      })
-
-      const totalDelay = 800 + initialSteps.length * 900 + 400
-      setTimeout(() => {
-        const lines = summaryFields.map((f) => `${f.label}: ${f.value}`).join("\n")
-        const blob = new Blob([`Utläggsrapport\n\n${lines}\n`], { type: "application/pdf" })
         addMessage({
           id: uid(),
           role: "assistant",
-          type: "download",
-          filename: "utlagg-restaurant-kronborg.pdf",
-          blobUrl: URL.createObjectURL(blob),
+          type: "text",
+          body:
+            updated.length === 1
+              ? "Kvittot är sparat. Vill du lägga till fler kvitton?"
+              : `${updated.length} kvitton är sparade. Vill du lägga till fler?`,
         })
-      }, totalDelay)
+        showSuggestions(["Lägg till kvitto", "Generera PDF"], (value) => {
+          clearSuggestions()
+          if (value === "Generera PDF") {
+            handleGeneratePdf()
+          } else {
+            fileInputRef.current?.click()
+          }
+        })
+      }, 100)
     },
-    [addMessage]
+    [addMessage, showSuggestions, clearSuggestions, handleGeneratePdf]
   )
 
   // --- Render ---
@@ -350,7 +416,7 @@ export function ExpenseChatShell() {
 
   return (
     <main className="grain min-h-screen overflow-hidden bg-background">
-      <FloatingNav onNewChat={handleNewChat} />
+      <FloatingNav onNewChat={handleNewChat} receipts={collectedReceipts} onGeneratePdf={handleGeneratePdf} />
       <div className="relative flex h-screen flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-primary/12 to-transparent" />
 
@@ -588,41 +654,25 @@ export function ExpenseChatShell() {
 
                 <div className="mt-2 flex flex-row items-center justify-between gap-4">
                   <PromptInputActions>
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-lg"
-                          className="rounded-full"
-                          aria-label="Lägg till underlag"
-                        >
-                          <Plus className="size-4" />
-                        </Button>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content
-                          side="top"
-                          align="start"
-                          sideOffset={8}
-                          className="z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-card p-1 shadow-md"
-                        >
-                          <DropdownMenu.Item
-                            className="flex cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                            onSelect={() => fileInputRef.current?.click()}
-                          >
-                            <FileUp className="size-4 text-muted-foreground" />
-                            Ladda upp fil
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            className="flex cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                            onSelect={() => cameraInputRef.current?.click()}
-                          >
-                            <Camera className="size-4 text-muted-foreground" />
-                            Ta bild
-                          </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu.Root>
+                    <Button
+                      variant="ghost"
+                      size="icon-lg"
+                      className="rounded-full"
+                      aria-label="Ladda upp fil"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-lg"
+                      className="rounded-full"
+                      aria-label="Ta bild"
+                      disabled={!hasCamera}
+                      onClick={() => cameraInputRef.current?.click()}
+                    >
+                      <Camera className="size-4" />
+                    </Button>
                   </PromptInputActions>
                   <Button
                     className="size-10 rounded-full p-0"

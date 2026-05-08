@@ -1,3 +1,8 @@
+export type CollectedReceipt = {
+  id: string
+  fields: { label: string; value: string }[]
+}
+
 export type ScanField = {
   label: string
   status: "pending" | "found" | "missing"

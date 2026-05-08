@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useMemo } from "react"
 import { useStickToBottom } from "use-stick-to-bottom"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
 type ChatScrollContext = {
@@ -44,11 +43,15 @@ function ChatContainerRoot({ children, className }: ChatContainerRootProps) {
 
   return (
     <ChatScrollContext.Provider value={ctx}>
-      <ScrollArea viewportRef={scrollRef} className={cn("h-full", className)} role="log">
+      <div
+        ref={scrollRef}
+        role="log"
+        className={cn("h-full overflow-y-auto", className)}
+      >
         <div ref={contentRef} className="flex w-full flex-col">
           {children}
         </div>
-      </ScrollArea>
+      </div>
     </ChatScrollContext.Provider>
   )
 }
